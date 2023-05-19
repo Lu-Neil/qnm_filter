@@ -15,6 +15,8 @@ import numpy as np
 from scipy.special import logsumexp
 from scipy.optimize import fsolve
 from scipy.interpolate import interp1d
+import warnings
+
 
 
 def parallel_compute(self, M_arr, chi_arr, num_cpu=-1, **kwargs):
@@ -203,7 +205,7 @@ def find_credible_region(array2d, num_cpu=-1, target_probability=0.9):
     result = fsolve(interp_probability, initial_guess)
     root_distance = interp_probability(result)
     if abs(root_distance) > 1e-8:
-        raise Warning("Cannot find the root, root distance was {} and so the \
+        warnings.warn("Cannot find the root, root distance was {} and so the \
         credible region estimate will be poor".format(root_distance))
     return result
 
