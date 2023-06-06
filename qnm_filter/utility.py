@@ -6,6 +6,8 @@ __all__ = [
     "project_to_1d",
     "pad_data_for_fft",
     "evidence_parallel",
+    "sampling_probability",
+    "find_probability_difference",
 ]
 
 from .gw_data import *
