@@ -89,6 +89,8 @@ def evidence_parallel(
     """
     flatten_array = [(i, j) for i in M_arr for j in chi_arr]
     saved_log_evidence = []
+    average_values = []
+    MAP_values = []
     self.shift_first_index(initial_offset)
     if verbosity:
         print(self.i0_dict)
@@ -98,6 +100,12 @@ def evidence_parallel(
                 delayed(self.likelihood_vs_mass_spin)(i, j, **kwargs)
                 for i, j in flatten_array
             )
+            likelihood_data = np.reshape(results, (len(M_arr), len(chi_arr))).T
+            projected_mass, projected_chi = project_to_1d(likelihood_data, np.diff(M_arr)[0], np.diff(chi_arr)[0])
+            
+            average_mass = np.dot(projected_mass, M_arr)
+            average_chi = np.dot(projected_chi, chi_arr)
+            MAP_value = flatten_array[np.argmax(results)]
         else:
             results = (
                 [self.compute_likelihood(apply_filter=False)]
@@ -106,6 +114,8 @@ def evidence_parallel(
             )
         log_evidence = logsumexp(results)
         saved_log_evidence.extend([log_evidence])
+        average_values.append((average_mass, average_chi))
+        MAP_values.append(MAP_value)
         self.shift_first_index(index_spacing)
         if verbosity:
             print(time_iter)
@@ -113,7 +123,7 @@ def evidence_parallel(
         self.t_init
         + (initial_offset + np.arange(num_iteration) * index_spacing) / self.srate
     )
-    return t_array, np.array(saved_log_evidence)
+    return t_array, np.array(saved_log_evidence), np.array(average_values), np.array(MAP_values)
 
 
 
@@ -233,8 +243,8 @@ def project_to_1d(array2d, delta_mass, delta_chi):
     normalized_mass = np.exp(logsumexp(array2d, axis=0) - evidence)
     normalized_chi = np.exp(logsumexp(array2d, axis=1) - evidence)
 
-    normalized_mass /= np.sum(normalized_mass * delta_mass)
-    normalized_chi /= np.sum(normalized_chi * delta_chi)
+#     normalized_mass /= np.sum(normalized_mass * delta_mass)
+#     normalized_chi /= np.sum(normalized_chi * delta_chi)
     return normalized_mass, normalized_chi
 
 
