@@ -317,7 +317,7 @@ class Noise:
             time = kwargs.pop("time")
             self.signal = Data(kwargs.get("signal"), index=time, ifo=ifo)
 
-    def load_noise_curve(self, attr_name, filename, ifo=None):
+    def load_noise_curve(self, attr_name, filename, lower_lim=None, upper_lim=None, resolution=None, ifo=None):
         """Read a txt/dat file and store the data in target attribute
         :attr:`attr_name`. The file should have two columns.
 
@@ -331,8 +331,17 @@ class Noise:
             name of interferometer, by default None
         """
         filereader = np.loadtxt(filename)
+        spacing = np.diff(filereader[:,0])
+        spacing -= spacing[0]
+        if np.sort(spacing)[-1] != 0:
+            interp = interp1d(filereader[:,0], filereader[:,1])
+            interp_space = np.linspace(lower_lim, upper_lim, resolution)
+            interp_data = interp(interp_space)
+        else:
+            interp_space = filereader[:,0]
+            interp_data = filereader[:,1]
         setattr(
-            self, attr_name, Data(filereader[:, 1], index=filereader[:, 0], ifo=ifo)
+            self, attr_name, Data(interp_data, index=interp_space, ifo=ifo)
         )
 
     def __psd_to_acf(self, psd):
