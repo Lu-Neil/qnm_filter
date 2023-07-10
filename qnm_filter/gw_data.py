@@ -9,6 +9,7 @@ import numpy as np
 import scipy.signal as ss
 import copy
 import bilby
+from scipy.interpolate import interp1d
 
 T_MSUN = c.M_sun.value * c.G.value / c.c.value**3
 
@@ -331,15 +332,8 @@ class Noise:
             name of interferometer, by default None
         """
         filereader = np.loadtxt(filename)
-        spacing = np.diff(filereader[:,0])
-        spacing -= spacing[0]
-        if np.sort(spacing)[-1] != 0:
-            interp = interp1d(filereader[:,0], filereader[:,1])
-            interp_space = np.linspace(lower_lim, upper_lim, resolution)
-            interp_data = interp(interp_space)
-        else:
-            interp_space = filereader[:,0]
-            interp_data = filereader[:,1]
+        interp_space = filereader[:,0]
+        interp_data = filereader[:,1]
         setattr(
             self, attr_name, Data(interp_data, index=interp_space, ifo=ifo)
         )
