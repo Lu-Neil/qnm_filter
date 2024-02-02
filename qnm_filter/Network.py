@@ -9,6 +9,9 @@ import h5py
 import numpy as np
 import scipy.linalg as sl
 import warnings
+import cupy
+import astropy.constants as c
+T_MSUN = c.M_sun.value * c.G.value / c.c.value**3
 
 
 class Network(object):
@@ -254,6 +257,7 @@ class Network(object):
             likelihood -= 0.5 * np.dot(data, wd)
         return likelihood
 
+
     def add_filter(self, **kwargs):
         """Apply rational filters to :attr:`Network.original_data` and store
         the filtered data in :attr:`Network.filtered_data`."""
@@ -265,6 +269,20 @@ class Network(object):
                 filter_in_freq * data_in_freq, norm="ortho", n=len(data)
             )
             self.filtered_data[ifo] = RealData(ifft, index=data.index, ifo=ifo)
+     
+
+    def GPU_add_filter(self, mass, chi, model_list):
+        #Dimensions: (freqs, detector, filters)
+        omega_arr = cp.asarray([qnm.modes_cache(s=-2, l=i[0], m=i[1], n=i[2])(a=chi)[0] for i in model_list])
+        omega_arr = cp.reshape(omega_arr, (1, omega_arr.shape[0]))
+        freqs = next(iter(self.original_data.values())).fft_freq
+        
+        cp_norm_freqs = cp.asarray(freqs) * mass * T_MSUN
+        pos_filt = (cp_norm_freqs - omega_arr) / (cp_norm_freqs - np.conj(omega_arr))
+        neg_filt = (cp_norm_freqs + np.conj(omega_arr)) / (normalized_freq + omega_arr)
+        total_filt = cp.multiply(cp.prod(pos_filt,axis=1), cp.prod(neg_filt,axis=1)) 
+        filtered_data = cp.multiply(total_filt, next(iter(self.original_data.values())).fft_data)
+        
 
     def likelihood_vs_mass_spin(self, M_est, chi_est, **kwargs) -> float:
         """Compute likelihood for the given mass and spin.
