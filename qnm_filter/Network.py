@@ -138,7 +138,9 @@ class Network(object):
         start time :attr:`Network.start_times` for each interferometer."""
         for ifo, data in self.original_data.items():
             t0 = self.start_times[ifo]
+            print(t0)
             self.i0_dict[ifo] = abs(data.time - t0).argmin()
+            print(self.i0_dict[ifo])
 
     def shift_first_index(self, n):
         """Shift the first index of the analysis segment by `n`."""
@@ -174,6 +176,7 @@ class Network(object):
         for i, d in network_data.items():
             if abs(d.fft_span / self.srate - 1) > 1e-8:
                 raise ValueError("Sampling rate is not correct: {}".format(d.fft_span))
+            print(RealData(d.iloc[i0s[i] : i0s[i]+1]))
             data[i] = RealData(d.iloc[i0s[i] : i0s[i] + self.sampling_n])
         return data
 
