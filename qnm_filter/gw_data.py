@@ -95,6 +95,9 @@ class Filter:
         array
         """
         omega = qnm.modes_cache(s=-2, l=l, m=m, n=n)(a=self.chi)[0]
+        # print("Omega = " + str(omega))
+        # print("Normalised freq = " + str(normalized_freq))
+        # print("Filter = " + str((normalized_freq - omega) / (normalized_freq - np.conj(omega))))
         return (normalized_freq - omega) / (normalized_freq - np.conj(omega))
 
     def neg_filter(self, normalized_freq, l, m, n):
@@ -198,7 +201,7 @@ class Filter:
         normalized_freq = freq * self.mass * T_MSUN
         for mode in self.model_list:
             final_rational_filter *= self.single_filter(
-                -normalized_freq, mode["l"], mode["m"], mode["n"]
+                -normalized_freq, mode["l"], mode["m"], mode["n"] 
             )
         return final_rational_filter
 
