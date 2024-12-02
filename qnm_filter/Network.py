@@ -9,7 +9,6 @@ import h5py
 import numpy as np
 import scipy.linalg as sl
 import warnings
-import cupy
 import astropy.constants as c
 T_MSUN = c.M_sun.value * c.G.value / c.c.value**3
 
