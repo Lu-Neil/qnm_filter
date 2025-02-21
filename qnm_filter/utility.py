@@ -11,7 +11,8 @@ __all__ = [
     "time_to_index",
     "time_shift_from_sky",
     "posterior_quantile_2d",
-    "parallel_compute_cached_omega"
+    "parallel_compute_cached_omega",
+    "credibility_of_mass_spin","pvalue_1d","credibility_of_mass_spin_reim"
 ]
 
 from joblib import Parallel, delayed
@@ -409,3 +410,91 @@ def time_shift_from_sky(ifo, ra, dec, t_init):
     location = lal.cached_detector_by_prefix[ifo].location
     dt_ifo = lal.TimeDelayFromEarthCenter(location, ra, dec, tgps)
     return dt_ifo
+
+def credibility_of_mass_spin(array2d, self, mass, spin, model_list, num_cpu=-1):
+    this_likelihood = self.likelihood_vs_mass_spin(mass, spin, model_list=model_list)
+
+    # iterate over the inputted log likelihoods and compute the distance of their log probability from the desired value.
+    sorted_likelihood = np.sort(array2d.flatten())
+
+    sorted_probability = [find_probability_difference(i, array2d) for i in sorted_likelihood]
+    sorted_probability = np.array(sorted_probability)
+    interp_probability = interp1d(sorted_likelihood, sorted_probability)
+    if min(sorted_likelihood) <= this_likelihood <= max(sorted_likelihood):
+        return 1 - np.exp(interp_probability(this_likelihood))
+    elif this_likelihood<=min(sorted_likelihood):
+        return 0
+    elif this_likelihood>=max(sorted_likelihood):
+        return 1
+    
+    
+def credibility_of_mass_spin_reim(array2d, self, mass, spin, num_cpu=-1):
+    this_likelihood = self.likelihood_vs_mass_spin_reim(mass, spin)
+
+    # iterate over the inputted log likelihoods and compute the distance of their log probability from the desired value.
+    sorted_likelihood = np.sort(array2d.flatten())
+
+    sorted_probability = [find_probability_difference(i, array2d) for i in sorted_likelihood]
+    sorted_probability = np.array(sorted_probability)
+    interp_probability = interp1d(sorted_likelihood, sorted_probability)
+    if min(sorted_likelihood) <= this_likelihood <= max(sorted_likelihood):
+        return 1 - np.exp(interp_probability(this_likelihood))
+    elif this_likelihood<=min(sorted_likelihood):
+        return 0
+    elif this_likelihood>=max(sorted_likelihood):
+        return 1
+
+
+def project_to_1d(array2d, delta_mass, delta_chi):
+    """Project the 2D log likelihood to 1D probability density functions,
+    whose integrations are normalized to be 1.
+
+    Parameters
+    ----------
+    array2d : ndarray
+        2D array of sampling log likelihood as a function of mass and spin
+    delta_mass : float
+        step size of mass
+    delta_chi : float
+        step size of chi
+
+    Returns
+    -------
+    Two ndarrays
+        probability density functions of mass and spin, both normalized to a total probability of 1.
+    """
+    log_evidence = logsumexp(array2d)
+    normalized_mass = np.exp(logsumexp(array2d, axis=0) - log_evidence)
+    normalized_chi = np.exp(logsumexp(array2d, axis=1) - log_evidence)
+
+    normalized_mass /= np.sum(normalized_mass * delta_mass)
+    normalized_chi /= np.sum(normalized_chi * delta_chi)
+    return normalized_mass, normalized_chi
+
+def pvalue_1d(array2d, delta_mass, delta_chi, massspace, spinspace, mass, spin):
+    log_evidence = logsumexp(array2d)
+    normalized_mass = np.exp(logsumexp(array2d, axis=0) - log_evidence)
+    normalized_chi = np.exp(logsumexp(array2d, axis=1) - log_evidence)
+
+    normalized_mass /= np.sum(normalized_mass * delta_mass)
+    normalized_chi /= np.sum(normalized_chi * delta_chi)
+    
+    func_mass = interp1d(massspace, normalized_mass) 
+    func_chi = interp1d(spinspace, normalized_chi) 
+    
+    massspace_finer = np.arange(massspace[0]+1e-6, massspace[-1]-1e-6, delta_mass/100)
+    spinspace_finer = np.arange(spinspace[0], spinspace[-1], delta_chi/100)
+    
+    normalized_mass_finer = func_mass(massspace_finer)
+    normalized_spin_finer = func_chi(spinspace_finer)
+    
+    normalized_mass_finer /=np.sum(normalized_mass_finer*delta_mass/100)
+    normalized_spin_finer /=np.sum(normalized_spin_finer*delta_chi/100)
+    
+    thresholdmass =interp1d(massspace_finer, normalized_mass_finer)(mass)
+    thresholdspin =interp1d(spinspace_finer, normalized_spin_finer)(spin) 
+    
+    mass_prob = np.sum(normalized_mass_finer[normalized_mass_finer > thresholdmass]) * delta_mass/100
+    spin_prob = np.sum(normalized_spin_finer[normalized_spin_finer > thresholdspin]) * delta_chi/100
+    return mass_prob, spin_prob
+
