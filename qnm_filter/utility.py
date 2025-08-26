@@ -1,5 +1,5 @@
-"""Useful functions for calculating and plotting data
-"""
+"""Useful functions for calculating and plotting data"""
+
 __all__ = [
     "parallel_compute",
     "parallel_compute_cached_omega",
@@ -48,13 +48,39 @@ def parallel_compute(self, M_arr, chi_arr, num_cpu=-1, **kwargs):
         2d array of the results with shape (len(x_arr), len(y_arr))
     """
     flatten_array = [(i, j) for i in M_arr for j in chi_arr]
-    results = Parallel(num_cpu)(
-        delayed(self.likelihood_vs_mass_spin)(i, j, **kwargs) for i, j in flatten_array
-    )
+    results = Parallel(num_cpu)(delayed(self.likelihood_vs_mass_spin)(i, j, **kwargs) for i, j in flatten_array)
     reshaped_results = np.reshape(results, (len(M_arr), len(chi_arr))).T
     return reshaped_results, logsumexp(reshaped_results)
 
-def parallel_compute_cached_omega(self, M_arr, chi_arr, num_cpu=-1, window='Tukey', alpha=0.2, **kwargs):
+
+def parallel_compute_ftau(fit, f_arr, tau_arr, num_cpu=-1, **kwargs):
+    """Parallel computation of a function that takes 2 arguments
+
+    Arguments
+    ---------
+    self : Network class instance
+        An instance of a Network class that will have self.likelihood_vs_mass_spin computed.
+    f_arr : array-like
+        array of the values of real frequencies to calculate the likelihood function for.
+    tau_arr : array-like
+        array of the values of damping times to calculate the likelihood function for.
+    num_cpu : int
+        integer to be based to Parallel as n_jobs. NOTE: passing a positive integer leads to better performance than -1 but performance differs across machines.
+    kwargs : dict
+        dictionary of kwargs of the function
+
+    Returns
+    ---------
+    reshaped_results : ndarray
+        2d array of the results with shape (len(x_arr), len(y_arr))
+    """
+    flatten_array = [(i, j) for i in f_arr for j in tau_arr]
+    results = Parallel(num_cpu)(delayed(fit.likelihood_vs_ftau)(i, j, **kwargs) for i, j in flatten_array)
+    reshaped_results = np.reshape(results, (len(f_arr), len(tau_arr))).T
+    return reshaped_results, logsumexp(reshaped_results)
+
+
+def parallel_compute_cached_omega(self, M_arr, chi_arr, num_cpu=-1, window="Tukey", alpha=0.2, **kwargs):
     """Parallel computation of a function that takes 2 arguments
 
     Arguments
@@ -76,18 +102,21 @@ def parallel_compute_cached_omega(self, M_arr, chi_arr, num_cpu=-1, window='Tuke
         2d array of the results with shape (len(x_arr), len(y_arr))
     """
     flatten_array = [(i, j) for i in M_arr for j in chi_arr]
-    mode_omega_dict = {mode : {} for mode in kwargs["model_list"]}
-    for mode in kwargs["model_list"]: #ONLY works for prograde modes
+    mode_omega_dict = {mode: {} for mode in kwargs["model_list"]}
+    for mode in kwargs["model_list"]:  # ONLY works for prograde modes
         l, m, n, p = mode
         mode_omega_dict[mode] = {chi: qnm.modes_cache(s=-2, l=l, m=m, n=n)(a=chi)[0] for chi in chi_arr}
     fft_freq_dict = {ifo: data.fft_freq for ifo, data in self.original_data.items()}
     fft_data_dict = {ifo: data.fft_data(window=window, alpha=alpha) for ifo, data in self.original_data.items()}
     results = Parallel(num_cpu)(
-        delayed(self.cached_likelihood_vs_mass_spin)(i, j, cached_omega=mode_omega_dict, 
-            fft_freq_dict = fft_freq_dict, fft_data_dict = fft_data_dict, **kwargs) for i, j in flatten_array
+        delayed(self.cached_likelihood_vs_mass_spin)(
+            i, j, cached_omega=mode_omega_dict, fft_freq_dict=fft_freq_dict, fft_data_dict=fft_data_dict, **kwargs
+        )
+        for i, j in flatten_array
     )
     reshaped_results = np.reshape(results, (len(M_arr), len(chi_arr))).T
     return reshaped_results, logsumexp(reshaped_results)
+
 
 def evidence_parallel(
     self,
@@ -133,25 +162,15 @@ def evidence_parallel(
         print(self.i0_dict)
     for time_iter in range(num_iteration):
         if apply_filter:
-            results = Parallel(num_cpu)(
-                delayed(self.likelihood_vs_mass_spin)(i, j, **kwargs)
-                for i, j in flatten_array
-            )
+            results = Parallel(num_cpu)(delayed(self.likelihood_vs_mass_spin)(i, j, **kwargs) for i, j in flatten_array)
         else:
-            results = (
-                [self.compute_likelihood(apply_filter=False)]
-                * len(M_arr)
-                * len(chi_arr)
-            )
+            results = [self.compute_likelihood(apply_filter=False)] * len(M_arr) * len(chi_arr)
         log_evidence = logsumexp(results)
         saved_log_evidence.extend([log_evidence])
         self.shift_first_index(index_spacing)
         if verbosity:
             print(time_iter)
-    t_array = (
-        self.t_init
-        + (initial_offset + np.arange(num_iteration) * index_spacing) / self.srate
-    )
+    t_array = self.t_init + (initial_offset + np.arange(num_iteration) * index_spacing) / self.srate
     return t_array, np.array(saved_log_evidence)
 
 
@@ -175,9 +194,7 @@ def time_to_index(self, index_spacing, tmin, tmax):
         number of sampling points for the evidence curve
     """
     initial_offset = int((tmin - self.t_init) * self.srate)
-    num_iteration = (
-        int(((tmax - self.t_init) * self.srate - initial_offset) / index_spacing) + 1
-    )
+    num_iteration = int(((tmax - self.t_init) * self.srate - initial_offset) / index_spacing) + 1
     return initial_offset, num_iteration
 
 
@@ -209,7 +226,7 @@ def find_probability_difference(threshold, array2d):
 def find_credible_region(loglikelihood_grid, target_probability=0.9):
     """
     Calculate the log-likelihood value which contains (100*level)% of the
-    total likelihood volume, interpolating between grid points. Credit for 
+    total likelihood volume, interpolating between grid points. Credit for
     improvements in this function go to Eliot Finch.
 
     Parameters
@@ -238,13 +255,10 @@ def find_credible_region(loglikelihood_grid, target_probability=0.9):
     sorted_likelihood_sum -= sorted_likelihood_sum[-1]
 
     # Interpolate based on 10 points around the desired level
-    idx = np.searchsorted(sorted_likelihood_sum, np.log(1-target_probability))
-    interp = interp1d(
-        sorted_likelihood_sum[idx-5:idx+5],
-        sorted_likelihood[idx-5:idx+5]
-    )
+    idx = np.searchsorted(sorted_likelihood_sum, np.log(1 - target_probability))
+    interp = interp1d(sorted_likelihood_sum[idx - 5 : idx + 5], sorted_likelihood[idx - 5 : idx + 5])
 
-    return interp(np.log(1-target_probability))
+    return interp(np.log(1 - target_probability))
 
 
 def posterior_quantile_2d(array2d, fit, mass, spin, model_list, num_cpu=-1):
@@ -276,9 +290,7 @@ def posterior_quantile_2d(array2d, fit, mass, spin, model_list, num_cpu=-1):
     # their log probability from the desired value.
     sorted_likelihood = np.sort(array2d.flatten())
 
-    sorted_probability = Parallel(num_cpu)(
-        delayed(find_probability_difference)(i, array2d) for i in sorted_likelihood
-    )
+    sorted_probability = Parallel(num_cpu)(delayed(find_probability_difference)(i, array2d) for i in sorted_likelihood)
     sorted_probability = np.array(sorted_probability)
     interp_probability = interp1d(sorted_likelihood, sorted_probability)
     if min(sorted_likelihood) <= this_likelihood <= max(sorted_likelihood):

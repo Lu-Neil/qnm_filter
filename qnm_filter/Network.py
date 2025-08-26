@@ -1,5 +1,4 @@
-"""Defining the core :class:`Network` class.
-"""
+"""Defining the core :class:`Network` class."""
 
 __all__ = ["Network"]
 
@@ -222,9 +221,7 @@ class Network(object):
             if self.sampling_n > len(self.acfs[ifo]) / 2:
                 raise ValueError("The sampling_n is more than half the acf length")
             if abs(acf.fft_span / self.srate - 1) > 1e-8:
-                raise ValueError(
-                    "Sampling rate is not correct: {}".format(acf.fft_span)
-                )
+                raise ValueError("Sampling rate is not correct: {}".format(acf.fft_span))
             truncated_acf = acf.iloc[: self.sampling_n].values
             L = np.linalg.cholesky(sl.toeplitz(truncated_acf))
             self.cholesky_L[ifo] = L
@@ -254,16 +251,22 @@ class Network(object):
             likelihood -= 0.5 * np.dot(y, y)
         return likelihood
 
-    def add_filter(self, window='Tukey', alpha=0.2, **kwargs):
+    def add_filter(self, window="Tukey", alpha=0.2, filter_mode="Kerr", **kwargs):
         """Apply rational filters to :attr:`Network.original_data` and store
         the filtered data in :attr:`Network.filtered_data`."""
+        if filter_mode not in ("Kerr", "free"):
+            raise ValueError("filter_mode not recognised")
         for ifo, data in self.original_data.items():
             data_in_freq = data.fft_data(window=window, alpha=alpha)
-            freq = data.fft_freq
-            filter_in_freq = Filter(**kwargs).total_filter(freq)
-            ifft = np.fft.irfft(
-                filter_in_freq * data_in_freq, norm="ortho", n=len(data)
-            )
+            freq = -data.fft_freq  # (-) corresponds to l394 of gw_data.py
+            if filter_mode == "Kerr":
+                filter_in_freq = Filter(**kwargs).total_filter(freq)
+            elif filter_mode == "free":
+                omega = kwargs.pop("omega")
+                pos_filter = (freq - omega) / (freq - np.conj(omega))
+                neg_filter = (freq + np.conj(omega)) / (freq + omega)
+                filter_in_freq = pos_filter * neg_filter
+            ifft = np.fft.irfft(filter_in_freq * data_in_freq, norm="ortho", n=len(data))
             self.filtered_data[ifo] = RealData(ifft, index=data.index, ifo=ifo)
 
     def likelihood_vs_mass_spin(self, M_est, chi_est, **kwargs) -> float:
@@ -281,24 +284,44 @@ class Network(object):
         The corresponding likelihood.
         """
         model_list = kwargs.pop("model_list")
-        window = kwargs.get("window", 'Tukey')
+        window = kwargs.get("window", "Tukey")
         alpha = kwargs.get("alpha", 0.2)
-        self.add_filter(mass=M_est, chi=chi_est, model_list=model_list, window=window, alpha=alpha)
+        self.add_filter(mass=M_est, chi=chi_est, model_list=model_list, window=window, alpha=alpha, filter_mode="Kerr")
         return self.compute_likelihood(apply_filter=True)
 
-    def cached_add_filter(self, fft_freq_dict=None, fft_data_dict = None, **kwargs):
+    def likelihood_vs_ftau(self, freq, tau, **kwargs) -> float:
+        """Compute likelihood for the given frequency and damping rate.
+
+        Parameters
+        ----------
+        freq : float
+            real frequency (1/s)
+        tau : float
+            damping time (s)
+
+        Returns
+        -------
+        The corresponding likelihood.
+        """
+        window = kwargs.get("window", "Tukey")
+        alpha = kwargs.get("alpha", 0.2)
+        omega = 2 * np.pi * freq - 1j / tau
+        self.add_filter(omega=omega, window=window, alpha=alpha, filter_mode="free")
+        return self.compute_likelihood(apply_filter=True)
+
+    def cached_add_filter(self, fft_freq_dict=None, fft_data_dict=None, **kwargs):
         """Apply rational filters to :attr:`Network.original_data` and store
         the filtered data in :attr:`Network.filtered_data`."""
         for ifo, data in self.original_data.items():
-            data_in_freq = fft_data_dict[ifo] #data.fft_data
-            freq = fft_freq_dict[ifo] #data.fft_freq
+            data_in_freq = fft_data_dict[ifo]  # data.fft_data
+            freq = fft_freq_dict[ifo]  # data.fft_freq
             filter_in_freq = cached_Filter(**kwargs).total_filter(freq)
-            ifft = np.fft.irfft(
-                filter_in_freq * data_in_freq, norm="ortho", n=len(data)
-            )
+            ifft = np.fft.irfft(filter_in_freq * data_in_freq, norm="ortho", n=len(data))
             self.filtered_data[ifo] = RealData(ifft, index=data.index, ifo=ifo)
 
-    def cached_likelihood_vs_mass_spin(self, M_est, chi_est, cached_omega, fft_freq_dict, fft_data_dict, **kwargs) -> float:
+    def cached_likelihood_vs_mass_spin(
+        self, M_est, chi_est, cached_omega, fft_freq_dict, fft_data_dict, **kwargs
+    ) -> float:
         """Compute likelihood for the given mass and spin.
 
         Parameters
@@ -313,10 +336,15 @@ class Network(object):
         The corresponding likelihood.
         """
         model_list = kwargs.pop("model_list")
-        self.cached_add_filter(mass=M_est, chi=chi_est, model_list=model_list, 
-            cached_omega=cached_omega, fft_freq_dict = fft_freq_dict, fft_data_dict = fft_data_dict)
+        self.cached_add_filter(
+            mass=M_est,
+            chi=chi_est,
+            model_list=model_list,
+            cached_omega=cached_omega,
+            fft_freq_dict=fft_freq_dict,
+            fft_data_dict=fft_data_dict,
+        )
         return self.compute_likelihood(apply_filter=True)
-
 
     def compute_SNR(self, data, template, ifo, optimal) -> float:
         """Compute matched-filter/optimal SNR.
