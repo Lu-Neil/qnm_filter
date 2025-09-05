@@ -251,18 +251,18 @@ class Network(object):
             likelihood -= 0.5 * np.dot(y, y)
         return likelihood
 
-    def add_filter(self, window="Tukey", alpha=0.2, filter_mode="Kerr", **kwargs):
+    def add_filter(self, window="Tukey", alpha=0.2, filter_mode="Kerr", omega=None, **kwargs):
         """Apply rational filters to :attr:`Network.original_data` and store
         the filtered data in :attr:`Network.filtered_data`."""
         if filter_mode not in ("Kerr", "free"):
             raise ValueError("filter_mode not recognised")
         for ifo, data in self.original_data.items():
             data_in_freq = data.fft_data(window=window, alpha=alpha)
-            freq = -data.fft_freq  # (-) corresponds to l394 of gw_data.py
             if filter_mode == "Kerr":
+                freq = data.fft_freq  # (-) corresponds to l394 of gw_data.py
                 filter_in_freq = Filter(**kwargs).total_filter(freq)
             elif filter_mode == "free":
-                omega = kwargs.pop("omega")
+                freq = -data.fft_freq  # (-) corresponds to l394 of gw_data.py
                 pos_filter = (freq - omega) / (freq - np.conj(omega))
                 neg_filter = (freq + np.conj(omega)) / (freq + omega)
                 filter_in_freq = pos_filter * neg_filter

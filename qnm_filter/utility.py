@@ -2,6 +2,7 @@
 
 __all__ = [
     "parallel_compute",
+    "parallel_compute_ftau",
     "parallel_compute_cached_omega",
     "find_credible_region",
     "project_to_1d",
